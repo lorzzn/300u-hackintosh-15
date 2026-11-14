@@ -9,7 +9,7 @@ macOS 自带的 Hypervisor.framework 只支持 Intel VT-x 和苹果芯片，所�
 - `RyzenHV.kext` 放在 Kernel › Add 的最后，`Arch = Any`
 - boot-args：`rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0`
   - `rhv_hv=1`：native 模式。kext 直接替代 AppleHV，Docker.app 的文件一个都不用改
-- **`csr-active-config = 03080000`**（SIP 部分关闭）
+- **`csr-active-config = 03080000`**（SIP 部分关闭）。这是 Docker 需要的最低值；默认 config 用的是 `430A0000`，它包含 `03080000` 的全部位，是 NootedRed 修改版推荐的值
 
 ### 为什么要关 SIP
 

@@ -1476,18 +1476,6 @@
 			</dict>
 			<key>7C436110-AB2A-4BBB-A880-FE41995C9F82</key>
 			<dict>
-				<key>boot-args</key>
-				<string>-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0</string>
-				<key>csr-active-config</key>
-				<data>
-				AwgAAA==
-				</data>
-				<key>prev-lang:kbd</key>
-				<data>
-				ZW4tVVM6MA==
-				</data>
-				<key>run-efi-updater</key>
-				<string>No</string>
 				<key>bluetoothExternalDongleFailed</key>
 				<data>
 				AA==
@@ -1496,6 +1484,18 @@
 				<data>
 				AAAAAAAAAAAAAAAAAAA=
 				</data>
+				<key>boot-args</key>
+				<string>-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0 -NRedDisplayFix</string>
+				<key>csr-active-config</key>
+				<data>
+				QwoAAA==
+				</data>
+				<key>prev-lang:kbd</key>
+				<data>
+				ZW4tVVM6MA==
+				</data>
+				<key>run-efi-updater</key>
+				<string>No</string>
 			</dict>
 		</dict>
 		<key>Delete</key>

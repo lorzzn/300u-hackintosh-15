@@ -10,8 +10,8 @@ AMD Athlon PRO 300U 小主机（Zen+ / Picasso，Vega 3 核显）的 macOS **Seq
 |---|---|
 | 主板 | HC HCAR357-MI，AMI Aptio V 5.14（2020-03） |
 | CPU | AMD Athlon PRO 300U，2 核 4 线程（family 0x17 model 0x18） |
-| 核显 | Radeon Vega 3（`1002:15d8`），UMA 1 GB |
-| 内存 | 16 GB（macOS 可用约 15 GB） |
+| 核显 | Radeon Vega 3（`1002:15d8`），UMA 2 GB |
+| 内存 | 16 GB（UMA 划走 2 GB，macOS 可用约 14 GB） |
 | 硬盘 | aigo NVMe SSD DP35 512 GB（YEESTOR GMT1000，无 DRAM） |
 | 有线网卡 | Realtek RTL8111（`10ec:8168`） |
 | 无线网卡 | Intel Wireless 8265（`8086:24fd`，蓝牙 `8087:0a2b`） |
@@ -21,7 +21,7 @@ AMD Athlon PRO 300U 小主机（Zen+ / Picasso，Vega 3 核显）的 macOS **Seq
 
 | 功能 | 状态 | 说明 |
 |---|---|---|
-| 核显加速 | ✅ | NootedRed，Metal 3，1080p |
+| 核显加速 | ✅ | NootedRed（[lorzzn 修改版](https://github.com/lorzzn/NootedRed)，`-NRedDisplayFix`），Metal 3，1080p；Chrome 硬件加速可用 |
 | 有线网 | ✅ | 千兆全双工 |
 | Wi-Fi | ✅ | AirportItlwm（alpha），系统原生 Wi-Fi 菜单；不支持只开 WPA3 的网络和 AirDrop |
 | 蓝牙 | ✅ | 需要 config 里的两个 NVRAM 变量，见 [docs/WIRELESS.md](docs/WIRELESS.md) |
@@ -39,12 +39,12 @@ EFI/                          直接拷到 U 盘或内置盘的 EFI 分区
   BOOT/BOOTx64.efi
   OC/
     OpenCore.efi              OpenCore 1.0.8 DEBUG
-    config.plist              默认配置：带 RyzenHV，SIP 部分关闭（03080000）
+    config.plist              默认配置：带 RyzenHV，SIP 部分关闭（430A0000）
     ACPI/                     SSDT-EC、SSDT-USBX
     Drivers/                  OpenRuntime、HfsPlus、ResetNvramEntry
     Kexts/                    NootedRed、ForgedInvariant 需要你自己放进来
 extras/
-  config-no-ryzenhv.plist     不需要 Docker 时用：不带 RyzenHV，SIP 全开
+  config-no-ryzenhv.plist     不需要 Docker 时用：不带 RyzenHV，SIP 全开（这种组合下 NootedRed 修改版未测试）
 docs/
   BIOS.md                     BIOS 设置
   WIRELESS.md                 Wi-Fi / 蓝牙
@@ -59,9 +59,11 @@ scripts/
 
 ### 1. 自己放入 NootedRed 和 ForgedInvariant（必需）
 
-本仓库**没有包含**这两个 kext，原因是它们的许可证不允许这样使用。`config.plist` 里已经有它们的条目，只缺文件本身。
+本仓库**没有包含**这两个 kext，需要你按各自的许可证自己下载。`config.plist` 里已经有它们的条目，只缺文件本身。
 
-- NootedRed（核显驱动，必需）：<https://github.com/ChefKissInc/NootedRed/releases>，下载 **RELEASE** 版（测试时用的是 0.8.10）
+- NootedRed（核显驱动，必需）：用修改版 <https://github.com/lorzzn/NootedRed/releases/tag/v0.9.0-pre-release.15-identity.1>，下载 `NootedRed-0.9.0-RELEASE.zip`，可用 release 里的 `SHA256SUMS` 校验。它基于 [steve12311/NootedRed](https://github.com/steve12311/NootedRed)，非官方版本，许可证是 TSNPL 1.5（仅限非商业用途）。
+  - 为什么不用官方版：官方 0.8.10 和 0.9.0 在这台机器上，Chrome 一开 GPU 加速，几十秒内 GPU 就卡死，几分钟后 `IPI timeout` panic。修改版靠 boot-args 里的 `-NRedDisplayFix` 修好了这个问题，在 macOS 15.8.3（24H241）上测试通过（Chrome 普通网页、B 站视频、WebGL 都正常）。
+  - 修改版只在 macOS 15 上测过；系统小版本更新后如果补丁没装上，Chrome 卡死的问题会回来，见下面「已知问题」。
 - ForgedInvariant（TSC 同步）：<https://github.com/ChefKissInc/ForgedInvariant/releases>（测试时用的是 1.5.0）
 
 解压后，把 `NootedRed.kext` 和 `ForgedInvariant.kext` 复制到 `EFI/OC/Kexts/`。
@@ -116,7 +118,8 @@ sudo diskutil unmount disk0s1
 - **ACPI**：DSDT 里没有 EC 设备，所以用 [SSDTTime](https://github.com/corpnewt/SSDTTime) 生成了 SSDT-EC（台式机 FakeEC）和 SSDT-USBX。不要用 FixHPET。
 - **Quirks**：按 Dortania 指南 [Ryzen and Threadripper (17h/19h)](https://dortania.github.io/OpenCore-Install-Guide/AMD/zen.html) 设置；`ResizeAppleGpuBars = -1`，因为这块 BIOS 没有 ReBAR 选项。
 - **SecureBootModel**：`Disabled`。
-- **当前 boot-args**：`-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0`
+- **当前 boot-args**：`-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0 -NRedDisplayFix`
+- **`csr-active-config`**：`430A0000`。Docker 至少需要 `03080000`（见 [docs/DOCKER.md](docs/DOCKER.md)），`430A0000` 在此基础上多放开了 0x40（NVRAM）和 0x200（未经批准的 kext），NootedRed 修改版的作者推荐这个值，测试也是在这个值下做的。
 
 ### 调试设置（稳定后可以关掉）
 
@@ -129,6 +132,7 @@ sudo diskutil unmount disk0s1
 
 ## 已知问题
 
+- **Chrome 卡死整机（只在用官方 NootedRed 时出现）**：Chrome 的 GPU 进程一启动，几十秒内 GPU 就卡死（`GFX event timeout` / `gpuRestart`），WindowServer 跟着卡死，几分钟后 `IPI timeout` panic。用修改版并加上 `-NRedDisplayFix` 就不会出现。补丁装没装上，可以用 `ioreg -l -w0 | grep NRedSubmitGuard` 看：应该有 `NRedSubmitGuardWindowServerApplied = 1`，而且没有 `...DynamicRejected = 1`。如果补丁没装上（比如 macOS 更新以后），在 Chrome 设置里关掉"使用图形加速功能"就能避开。
 - **开机时 RyzenHV 只在 1 个 CPU 上开启了 SVM**：OpenCore 注入 kext 时，其余核心还没上线。kext 会在第一次创建虚拟机时自动重新扫描，补齐到 4/4；也可以手动执行 `rhv-info hv rescan`。
 - **睡眠**：一睡眠，正在运行的 HyperKit 就会崩溃（`VmRun: SVM was turned off under us`）。所以服务器用途下关掉了系统睡眠。
 - **NVMe 链路速率**：`system_profiler` 显示的 2.5 GT/s 是开机时读到的旧值，实测速度对应 Gen2 x4。把 BIOS 里 AMD CBS › NBIO › PCIe › PSPP Policy 改成 Performance 也许能升到 Gen3，但我没测过。
@@ -151,6 +155,7 @@ sudo diskutil unmount disk0s1
 | IntelBluetoothFirmware / IntelBTPatcher | 2.4.0 | [OpenIntelWireless/IntelBluetoothFirmware](https://github.com/OpenIntelWireless/IntelBluetoothFirmware) |
 | AirportItlwm (Sequoia) | 2.4.0-alpha (7204c69) | [laobamac/itlwm](https://github.com/laobamac/itlwm/releases/tag/v2.4.0-alpha) |
 | RyzenHV | 0.7.8 | [OverlordDev/ryzen-hypervisor.framework](https://github.com/OverlordDev/ryzen-hypervisor.framework) |
-| NootedRed / ForgedInvariant | 0.8.10 / 1.5.0 | 需自行下载，见步骤 1 |
+| NootedRed（修改版） | v0.9.0-pre-release.15-identity.1 | [lorzzn/NootedRed](https://github.com/lorzzn/NootedRed/releases/tag/v0.9.0-pre-release.15-identity.1)，需自行下载，见步骤 1 |
+| ForgedInvariant | 1.5.0 | [ChefKissInc/ForgedInvariant](https://github.com/ChefKissInc/ForgedInvariant/releases)，需自行下载，见步骤 1 |
 
 各组件按各自的许可证分发。本仓库自己写的文档和脚本只是附带的说明。

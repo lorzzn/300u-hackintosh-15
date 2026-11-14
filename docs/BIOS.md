@@ -28,7 +28,7 @@
 | SVM Mode | Enabled（RyzenHV 要用） |
 | XHCI Hand-off | Enabled |
 | Integrated Graphics | Forces |
-| Graphics Memory Size (UMA) | 1G（只能选 Auto、1G、2G 三档；NootedRed 要求大于 512 MB，所以 1G 够用） |
+| Graphics Memory Size (UMA) | 2G（只能选 Auto、1G、2G 三档；NootedRed 要求大于 512 MB，1G 也够用，但目前的测试都是在 2G 下做的） |
 | PSPP Policy | Auto（改成 Performance 也许能让 NVMe 从 Gen2 升到 Gen3，我没测过） |
 
 ## 进 BIOS 的方法
