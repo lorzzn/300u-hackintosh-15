@@ -15,7 +15,7 @@ AMD Athlon PRO 300U 小主机（Zen+ / Picasso，Vega 3 核显）的 macOS **Seq
 | 硬盘 | aigo NVMe SSD DP35 512 GB（YEESTOR GMT1000，无 DRAM） |
 | 有线网卡 | Realtek RTL8111（`10ec:8168`） |
 | 无线网卡 | Intel Wireless 8265（`8086:24fd`，蓝牙 `8087:0a2b`） |
-| 声卡 | Realtek ALC269VC（未驱动，见下文） |
+| 声卡 | Realtek ALC269VC（AppleALC，layout-id 17） |
 
 ## 工作情况（macOS 15.8.3）
 
@@ -28,7 +28,7 @@ AMD Athlon PRO 300U 小主机（Zen+ / Picasso，Vega 3 核显）的 macOS **Seq
 | NVMe | ✅ | 顺序读写约 1.6 / 1.4 GB/s（PCIe Gen2 x4） |
 | USB | ✅ | 4 个 USB3 口均为 5 Gb/s；未做 USB 映射 |
 | HDMI 音频 | ✅ | |
-| 3.5mm 模拟音频 | ❌ | 没加 AppleALC |
+| 3.5mm 模拟音频 | ✅ | AppleALC，layout-id 17：耳机输出和麦克风输入（主板只接了这两个口） |
 | Docker Desktop | ✅ | RyzenHV 0.7.8 + Docker Desktop 4.97.0 Intel 版，见 [docs/DOCKER.md](docs/DOCKER.md) |
 | 睡眠 | ⚠️ | macOS 能正常睡眠和唤醒，但 Docker 的虚拟机会在睡眠时崩溃，所以服务器用途下关闭了睡眠 |
 
@@ -120,6 +120,7 @@ sudo diskutil unmount disk0s1
 - **SecureBootModel**：`Disabled`。
 - **当前 boot-args**：`-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0 -NRedDisplayFix`
 - **`csr-active-config`**：`430A0000`。Docker 至少需要 `03080000`（见 [docs/DOCKER.md](docs/DOCKER.md)），`430A0000` 在此基础上多放开了 0x40（NVRAM）和 0x200（未经批准的 kext），NootedRed 修改版的作者推荐这个值，测试也是在这个值下做的。
+- **声卡**：AppleALC，`DeviceProperties` 里给 `PciRoot(0x0)/Pci(0x8,0x1)/Pci(0x0,0x6)`（1022:15E3）设 `layout-id = 17`。**AppleALC 在 Kernel › Add 里必须排在 NootedRed 后面**：两者都 hook `AppleGFXHDAController::probe`，Lilu 要求先 hook 的插件用长跳转（NootedRed 是长跳转，AppleALC 是短跳转），顺序反了开机就 panic（`previous plugin had short jump type on a multiroute function`）。17 不合适时可以用 boot-arg `alcid=18` 或 `alcid=24` 临时试。
 
 ### 调试设置（稳定后可以关掉）
 
@@ -132,7 +133,7 @@ sudo diskutil unmount disk0s1
 
 ## 已知问题
 
-- **Chrome 卡死整机（只在用官方 NootedRed 时出现）**：Chrome 的 GPU 进程一启动，几十秒内 GPU 就卡死（`GFX event timeout` / `gpuRestart`），WindowServer 跟着卡死，几分钟后 `IPI timeout` panic。用修改版并加上 `-NRedDisplayFix` 就不会出现。补丁装没装上，可以用 `ioreg -l -w0 | grep NRedSubmitGuard` 看：应该有 `NRedSubmitGuardWindowServerApplied = 1`，而且没有 `...DynamicRejected = 1`。如果补丁没装上（比如 macOS 更新以后），在 Chrome 设置里关掉"使用图形加速功能"就能避开。
+- **Chrome 卡死整机（只在用官方 NootedRed 时出现）**：Chrome 的 GPU 进程一启动，几十秒内 GPU 就卡死（`GFX event timeout` / `gpuRestart`），WindowServer 跟着卡死，几分钟后 `IPI timeout` panic。用修改版并加上 `-NRedDisplayFix` 就不会出现。补丁装没装上，可以用 `ioreg -l -w0 | grep NRedSubmitGuard` 看：应该有 `NRedSubmitGuardWindowServerApplied = 1`。`NRedSubmitGuardDynamicRejected = 1` 在正常工作时也会出现（来自用另一份共享缓存的 DriverKit 进程，设上后不清除），不能单凭它判断失败。如果补丁没装上（比如 macOS 更新以后），在 Chrome 设置里关掉"使用图形加速功能"就能避开。
 - **开机时 RyzenHV 只在 1 个 CPU 上开启了 SVM**：OpenCore 注入 kext 时，其余核心还没上线。kext 会在第一次创建虚拟机时自动重新扫描，补齐到 4/4；也可以手动执行 `rhv-info hv rescan`。
 - **睡眠**：一睡眠，正在运行的 HyperKit 就会崩溃（`VmRun: SVM was turned off under us`）。所以服务器用途下关掉了系统睡眠。
 - **NVMe 链路速率**：`system_profiler` 显示的 2.5 GT/s 是开机时读到的旧值，实测速度对应 Gen2 x4。把 BIOS 里 AMD CBS › NBIO › PCIe › PSPP Policy 改成 Performance 也许能升到 Gen3，但我没测过。
@@ -146,6 +147,7 @@ sudo diskutil unmount disk0s1
 | OpenCore (DEBUG) | 1.0.8 | [acidanthera/OpenCorePkg](https://github.com/acidanthera/OpenCorePkg) |
 | HfsPlus.efi | — | [acidanthera/OcBinaryData](https://github.com/acidanthera/OcBinaryData) |
 | Lilu | 1.7.2 | [acidanthera/Lilu](https://github.com/acidanthera/Lilu) |
+| AppleALC | 1.9.8 | [acidanthera/AppleALC](https://github.com/acidanthera/AppleALC) |
 | VirtualSMC | 1.3.8 | [acidanthera/VirtualSMC](https://github.com/acidanthera/VirtualSMC) |
 | NVMeFix | 1.1.3 | [acidanthera/NVMeFix](https://github.com/acidanthera/NVMeFix) |
 | RestrictEvents | 1.1.6 | [acidanthera/RestrictEvents](https://github.com/acidanthera/RestrictEvents) |
