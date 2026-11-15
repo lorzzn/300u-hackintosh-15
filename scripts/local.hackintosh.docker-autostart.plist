@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Replace __HOME__ with your home directory (see docs/DOCKER.md). -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>local.hackintosh.docker-autostart</string>
+  <key>ProgramArguments</key><array><string>/bin/sh</string><string>__HOME__/.hackintosh/docker-autostart.sh</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>StandardOutPath</key><string>__HOME__/.hackintosh/docker-autostart.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.hackintosh/docker-autostart.log</string>
+</dict></plist>

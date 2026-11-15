@@ -59,10 +59,49 @@ RHV_YES=1 ./rhv docker-desktop get   # 会从 desktop.docker.com 下载，国内
 | `UseVirtualizationFramework` | `false` | 用 HyperKit 引擎 |
 | `UseResourceSaver` | `false` | 空闲时 Resource Saver 会停掉 HyperKit，但留下 `hyperkit.pid`。下次启动时报 `Failed to set up pidfile`，直接退出 |
 | `AutoDownloadUpdates` | `false` | 其他版本的 HyperKit 不一定能被补丁识别 |
-| `AutoStart` | `true` | 登录后自动启动 |
+| `AutoStart` | `false` | 使用下面的登录任务，等待默认 socket 链接就绪后启动 |
 | `MemoryMiB` / `Cpus` | `6144` / `4` | |
 
-第一次启动时，Docker 会弹 osascript 密码框，把 docker 命令链接到 `/usr/local/bin`，这是正常的。
+首次安装系统集成时，Docker 可能请求管理员授权。如果每次开机都为 `set-docker-socket` 弹出密码框，可使用下面的启动顺序。
+
+### 等待默认 socket 链接后启动
+
+Docker 官方的 `com.docker.socket` LaunchDaemon 在开机时创建
+`/var/run/docker.sock -> ~/.docker/run/docker.sock`。这台机器上曾出现 Docker
+先检查到链接缺失、再请求管理员授权重新配置的情况。
+
+在 Docker 的 General 设置中关闭 **Start Docker Desktop when you sign in to your computer**，
+并在 Advanced 设置中开启 **Allow the default Docker socket to be used**。然后安装登录任务。
+
+```sh
+mkdir -p ~/.hackintosh ~/Library/LaunchAgents
+cp scripts/docker-autostart.sh ~/.hackintosh/
+cp scripts/local.hackintosh.docker-autostart.plist ~/Library/LaunchAgents/
+sed -i '' "s|__HOME__|$HOME|g" ~/Library/LaunchAgents/local.hackintosh.docker-autostart.plist
+plutil -lint ~/Library/LaunchAgents/local.hackintosh.docker-autostart.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.hackintosh.docker-autostart.plist
+```
+
+更新已经加载的同名任务时，先执行
+`launchctl bootout gui/$(id -u)/local.hackintosh.docker-autostart`，
+再重新执行上面的安装命令。
+
+任务每两秒检查链接本身及其目标路径。正确的链接即使暂时没有实际 socket 也可通过，
+实际 socket 会在 Docker 启动后创建。等待时每分钟记录一次日志，启动 Docker 后任务退出。
+打开 Docker 失败时，launchd 按失败退出策略重试。
+
+日志位于 `~/.hackintosh/docker-autostart.log`。脚本可通过
+`DOCKER_SOCKET_LINK` 指定检查路径，回归测试使用临时路径隔离运行。
+测试命令为 `python3 -m unittest discover -s tests -v`，在 macOS 上执行。
+
+回退时执行下面的命令，然后在 Docker 的 General 设置中重新开启自带的登录启动选项。
+
+```sh
+launchctl bootout gui/$(id -u)/local.hackintosh.docker-autostart
+rm "$HOME/Library/LaunchAgents/local.hackintosh.docker-autostart.plist"
+```
+
+冷启动后是否消除授权弹窗，需要实际重启验证。
 
 ### 过期 pid 文件的清理
 
@@ -96,7 +135,7 @@ macOS 直连 `registry-1.docker.io` 会超时。在 `~/.docker/daemon.json` 里�
 
 如果要求断电重启后自动恢复服务，需要：
 - 开启自动登录（FileVault 必须是关的）。注意自动登录的密码是以简单混淆的方式存在 `/etc/kcpassword` 里的。
-- Docker 设置 `AutoStart=true`。
+- Docker 设置 `AutoStart=false`，安装上面的等待 socket 链接登录任务。
 
 ## 回退
 
