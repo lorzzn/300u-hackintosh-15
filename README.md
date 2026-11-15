@@ -24,7 +24,7 @@ AMD Athlon PRO 300U 小主机（Zen+ / Picasso，Vega 3 核显）的 macOS **Seq
 | 核显加速 | ✅ | NootedRed（[lorzzn 修改版](https://github.com/lorzzn/NootedRed)，`-NRedDisplayFix`），Metal 3，1080p；Chrome 硬件加速可用 |
 | 有线网 | ✅ | 千兆全双工 |
 | Wi-Fi | ✅ | AirportItlwm（alpha），系统原生 Wi-Fi 菜单；不支持只开 WPA3 的网络和 AirDrop |
-| 蓝牙 | ✅ | 需要 config 里的两个 NVRAM 变量，见 [docs/WIRELESS.md](docs/WIRELESS.md) |
+| 蓝牙 | ⚠️ | BlueToolFixup `2.7.3-cow.3` 与 `-btlfxnohwfilters`，开关和扫描已验证，当前修复版的配对、重连和睡眠待验证，见 [docs/WIRELESS.md](docs/WIRELESS.md) |
 | NVMe | ✅ | 顺序读写约 1.6 / 1.4 GB/s（PCIe Gen2 x4） |
 | USB | ✅ | 4 个 USB3 口均为 5 Gb/s；未做 USB 映射 |
 | HDMI 音频 | ✅ | |
@@ -118,7 +118,7 @@ sudo diskutil unmount disk0s1
 - **ACPI**：DSDT 里没有 EC 设备，所以用 [SSDTTime](https://github.com/corpnewt/SSDTTime) 生成了 SSDT-EC（台式机 FakeEC）和 SSDT-USBX。不要用 FixHPET。
 - **Quirks**：按 Dortania 指南 [Ryzen and Threadripper (17h/19h)](https://dortania.github.io/OpenCore-Install-Guide/AMD/zen.html) 设置；`ResizeAppleGpuBars = -1`，因为这块 BIOS 没有 ReBAR 选项。
 - **SecureBootModel**：`Disabled`。
-- **当前 boot-args**：`-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0 -NRedDisplayFix`
+- **当前 boot-args**：`-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0 -NRedDisplayFix -btlfxnohwfilters`
 - **`csr-active-config`**：`430A0000`。Docker 至少需要 `03080000`（见 [docs/DOCKER.md](docs/DOCKER.md)），`430A0000` 在此基础上多放开了 0x40（NVRAM）和 0x200（未经批准的 kext），NootedRed 修改版的作者推荐这个值，测试也是在这个值下做的。
 - **声卡**：AppleALC，`DeviceProperties` 里给 `PciRoot(0x0)/Pci(0x8,0x1)/Pci(0x0,0x6)`（1022:15E3）设 `layout-id = 17`。**AppleALC 在 Kernel › Add 里必须排在 NootedRed 后面**：两者都 hook `AppleGFXHDAController::probe`，Lilu 要求先 hook 的插件用长跳转（NootedRed 是长跳转，AppleALC 是短跳转），顺序反了开机就 panic（`previous plugin had short jump type on a multiroute function`）。17 不合适时可以用 boot-arg `alcid=18` 或 `alcid=24` 临时试。
 
@@ -133,6 +133,8 @@ sudo diskutil unmount disk0s1
 
 ## 已知问题
 
+- **2026-11-15 的私有页修复验证**：RestrictEvents `1.1.7-cow.1` 保留 CPU 名称修改，通过进程私有页写入修复原有页哈希问题。BlueToolFixup `2.7.3-cow.3` 包含蓝牙进程私有页修复、授权修复和可选扫描兼容补丁。macOS 15.8.3（24H241）从 U 盘启动后，系统设置可运行，蓝牙持续发现设备，原有两类硬件过滤错误均为 0 次，未发现新的页哈希错误或相关进程崩溃。该观察窗口约 22 分钟，配对、持续连接、睡眠唤醒和功耗仍待验证。
+- **Spotlight 与后台服务**：`mds` 在 11 月 14 日、15 日各出现一次相同 UUID 读取位置的无效内存访问，最近一次已自动恢复，随后搜索查询成功，根因仍待定位。通讯录／查找后台服务的沙盒拒绝也仍会出现，相关功能影响尚未验证。
 - **Chrome 卡死整机（只在用官方 NootedRed 时出现）**：Chrome 的 GPU 进程一启动，几十秒内 GPU 就卡死（`GFX event timeout` / `gpuRestart`），WindowServer 跟着卡死，几分钟后 `IPI timeout` panic。用修改版并加上 `-NRedDisplayFix` 就不会出现。补丁装没装上，可以用 `ioreg -l -w0 | grep NRedSubmitGuard` 看：应该有 `NRedSubmitGuardWindowServerApplied = 1`。`NRedSubmitGuardDynamicRejected = 1` 在正常工作时也会出现（来自用另一份共享缓存的 DriverKit 进程，设上后不清除），不能单凭它判断失败。如果补丁没装上（比如 macOS 更新以后），在 Chrome 设置里关掉"使用图形加速功能"就能避开。
 - **开机时 RyzenHV 只在 1 个 CPU 上开启了 SVM**：OpenCore 注入 kext 时，其余核心还没上线。kext 会在第一次创建虚拟机时自动重新扫描，补齐到 4/4；也可以手动执行 `rhv-info hv rescan`。
 - **睡眠**：一睡眠，正在运行的 HyperKit 就会崩溃（`VmRun: SVM was turned off under us`）。所以服务器用途下关掉了系统睡眠。
@@ -150,8 +152,8 @@ sudo diskutil unmount disk0s1
 | AppleALC | 1.9.8 | [acidanthera/AppleALC](https://github.com/acidanthera/AppleALC) |
 | VirtualSMC | 1.3.8 | [acidanthera/VirtualSMC](https://github.com/acidanthera/VirtualSMC) |
 | NVMeFix | 1.1.3 | [acidanthera/NVMeFix](https://github.com/acidanthera/NVMeFix) |
-| RestrictEvents | 1.1.6 | [acidanthera/RestrictEvents](https://github.com/acidanthera/RestrictEvents) |
-| BlueToolFixup | 2.7.2 | [acidanthera/BrcmPatchRAM](https://github.com/acidanthera/BrcmPatchRAM) |
+| RestrictEvents | 1.1.7-cow.1 | [lorzzn/RestrictEvents](https://github.com/lorzzn/RestrictEvents/releases/tag/v1.1.7-cow.1)，CPU 名称私有页修复 |
+| BlueToolFixup | 2.7.3-cow.3 | [lorzzn/BrcmPatchRAM](https://github.com/lorzzn/BrcmPatchRAM/releases/tag/v2.7.3-cow.3)，私有页及扫描兼容修复 |
 | RealtekRTL8111 | 3.0.4（release v3.0.0） | [Mieze/RTL8111_driver_for_OS_X](https://github.com/Mieze/RTL8111_driver_for_OS_X) |
 | AppleMCEReporterDisabler | 1.2 | [acidanthera/bugtracker 附件](https://github.com/acidanthera/bugtracker/files/3703498/AppleMCEReporterDisabler.kext.zip) |
 | IntelBluetoothFirmware / IntelBTPatcher | 2.4.0 | [OpenIntelWireless/IntelBluetoothFirmware](https://github.com/OpenIntelWireless/IntelBluetoothFirmware) |
@@ -160,4 +162,4 @@ sudo diskutil unmount disk0s1
 | NootedRed（修改版） | v0.9.0-pre-release.15-identity.1 | [lorzzn/NootedRed](https://github.com/lorzzn/NootedRed/releases/tag/v0.9.0-pre-release.15-identity.1)，需自行下载，见步骤 1 |
 | ForgedInvariant | 1.5.0 | [ChefKissInc/ForgedInvariant](https://github.com/ChefKissInc/ForgedInvariant/releases)，需自行下载，见步骤 1 |
 
-各组件按各自的许可证分发。本仓库自己写的文档和脚本只是附带的说明。
+各组件按各自的许可证分发。RestrictEvents、BrcmPatchRAM 与 BlueToolFixup 私有页实现的分发声明见 [docs/licenses](docs/licenses)。本仓库自己写的文档和脚本只是附带的说明。

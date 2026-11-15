@@ -37,3 +37,13 @@ Kext 有三个，都排在 Lilu 后面：`BlueToolFixup`、`IntelBluetoothFirmwa
 | `bluetoothInternalControllerInfo` | Data | `0000000000000000000000000000`（14 字节） |
 
 改完后蓝牙会被识别为外接 USB 适配器，`Chipset: THIRD_PARTY_DONGLE`，能正常配对。来源：[IntelBluetoothFirmware#513](https://github.com/OpenIntelWireless/IntelBluetoothFirmware/issues/513)，那里有人在同一张 8265（`8087:0A2B`）上验证过。
+
+## 当前 BlueToolFixup 修复版
+
+仓库包含 [lorzzn/BrcmPatchRAM 的 `v2.7.3-cow.3`](https://github.com/lorzzn/BrcmPatchRAM/releases/tag/v2.7.3-cow.3)。kext 的 bundle 版本为 `2.7.3`，`BlueToolFixupPrivatePageRevision` 为 `cow.3`。
+
+这个版本把 macOS 15 及更新版本的 BlueTool、bluetoothd 补丁写入进程私有页，并包含启动授权修复。默认配置和不带 RyzenHV 的备用配置均启用了 `-btlfxnohwfilters`，用于这台 Intel 8265 的扫描兼容处理。
+
+在已分析的系统中，苹果蓝牙栈会拒绝控制器不支持的硬件匹配规则及 UUID 过滤操作，产生 `Failed to add rule` 和 `addScanFilterByUUID failed`。启用参数后，补丁让扫描状态机进入原有 `Skip addFilters` 分支，继续使用主机端客户端匹配与设备发现流程。定位依据指令结构、相对跳转目标和诊断引用，镜像 UUID 用于日志记录。
+
+2026-11-15 在 macOS 15.8.3（24H241）从 U 盘启动后，确认加载了 cow.3，扫描跳过分支和持续设备发现均有日志，两类原有过滤错误均为 0 次，bluetoothd 没有重启。当前修复版的实际配对、持续连接、重连、睡眠唤醒及功耗仍待验证。恢复硬件过滤路径可移除 `-btlfxnohwfilters`，随后重启。
