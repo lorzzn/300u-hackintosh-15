@@ -13,7 +13,6 @@
 ## Constraints
 
 - Set Docker's built-in `AutoStart` to false through its own settings interface.
-- Remove any independent macOS session login item that opens `/Applications/Docker.app` before the waiting task.
 - Enable the default Docker socket integration and reuse the installed official service.
 - Check the symlink and its target path every two seconds. A dangling but correct symlink is ready.
 - Log waiting periodically and continue waiting when the helper is slow.
@@ -29,7 +28,6 @@
 - [x] Document installation, logs, and rollback in the existing Docker instructions.
 - [x] Review the complete change and commit using the repository's existing style.
 - [x] Back up, install, disable native autostart, and verify Docker and the installed job.
-- [x] Remove the independent Docker session login item found during the first reboot check.
 
 ## Review focus
 
@@ -47,6 +45,4 @@ Installed on November 16, 2026. Both Docker's running settings interface and its
 
 The original configuration is backed up on Windows under `F:\300u-hackintosh-workspace\backups\docker-startup-order-20261116-005954`. Installed script and plist hashes match the reviewed source. Docker's official socket LaunchDaemon remains installed and its plist hash matches the backup.
 
-The first reboot reproduced the authorization prompt. Loginwindow launched Docker at 01:13:19 through an independent session login item. Docker requested `set-docker-socket` authorization at 01:14:31, before the waiting task opened Docker at 01:15:48. Docker's own helper reported autostart disabled. The independent login item was backed up on Windows and removed through CoreServices. The other three session login items were preserved. The pending authorization request was cancelled, and the keepalive container retained its current boot's ID and start time.
-
-Verification after another physical reboot remains pending. The user will check whether Docker starts automatically and whether the authorization dialog reappears.
+Physical reboot verification remains pending. The user will check whether Docker starts automatically and whether the authorization dialog reappears.
