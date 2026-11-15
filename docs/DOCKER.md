@@ -71,7 +71,12 @@ Docker 官方的 `com.docker.socket` LaunchDaemon 在开机时创建
 先检查到链接缺失、再请求管理员授权重新配置的情况。
 
 在 Docker 的 General 设置中关闭 **Start Docker Desktop when you sign in to your computer**，
-并在 Advanced 设置中开启 **Allow the default Docker socket to be used**。然后安装登录任务。
+并在 Advanced 设置中开启 **Allow the default Docker socket to be used**。
+同时检查 macOS 的「系统设置 → 通用 → 登录项与扩展 → 登录时打开」，
+移除直接打开 `/Applications/Docker.app` 的条目，然后安装登录任务。
+
+已有的 macOS 独立登录项可在 Docker 的 `AutoStart=false` 时继续启动应用。
+本机曾因此在等待任务执行前启动 Docker，再次触发 `set-docker-socket` 授权请求。
 
 ```sh
 mkdir -p ~/.hackintosh ~/Library/LaunchAgents
@@ -101,7 +106,9 @@ launchctl bootout gui/$(id -u)/local.hackintosh.docker-autostart
 rm "$HOME/Library/LaunchAgents/local.hackintosh.docker-autostart.plist"
 ```
 
-冷启动后是否消除授权弹窗，需要实际重启验证。
+冷启动后是否消除授权弹窗，需要实际重启验证。若再次弹窗，先对照
+`~/.hackintosh/docker-autostart.log` 与 Docker 后台日志中的启动时间，
+确认 Docker 是否由其他登录入口提前启动。
 
 ### 过期 pid 文件的清理
 
