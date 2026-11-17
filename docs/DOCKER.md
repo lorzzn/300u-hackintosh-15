@@ -1,14 +1,15 @@
-# Docker Desktop（RyzenHV 0.7.8）
+# Docker Desktop（RyzenHV 0.7.9-compat.1）
 
-macOS 自带的 Hypervisor.framework 只支持 Intel VT-x 和苹果芯片，所以 AMD 机器上 `kern.hv_support` 是 0，Docker、UTM、Parallels 这些都跑不起来。[RyzenHV](https://github.com/OverlordDev/ryzen-hypervisor.framework) 是一个 kext，它用 AMD SVM 实现了这个框架，补上了这块。
+macOS 自带的 Hypervisor.framework 只支持 Intel VT-x 和苹果芯片，所以 AMD 机器上 `kern.hv_support` 是 0，Docker、UTM、Parallels 这些都跑不起来。[RyzenHV 修改版](https://github.com/lorzzn/ryzen-hypervisor.framework) 是一个 kext，它用 AMD SVM 实现了这个框架，补上了这块。
 
-**它的状态**：实验项目，作者只在 Ryzen 7 5800H 上测试过。在这台 300U（Zen+）上，hello-world、长时间运行的容器、4 vCPU / 6 GB 内存都能跑。
+这是实验项目。在这台 300U（Zen+）上，此前 0.7.8-compat.1 已验证 hello-world、长时间运行的容器、4 vCPU / 6 GB 内存、驱动独立初始化和 Docker 目录共享。当前 0.7.9-compat.1 包含上游 0.7.9-beta，已通过构建和回归测试，尚待实机启动验证。
 
 ## 1. EFI（已经包含在默认 config 里）
 
 - `RyzenHV.kext` 放在 Kernel › Add 的最后，`Arch = Any`
-- boot-args：`rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0`
+- boot-args `rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_hv_sysctl=1 rhv_selftest=1 ipc_control_port_options=0`
   - `rhv_hv=1`：native 模式。kext 直接替代 AppleHV，Docker.app 的文件一个都不用改
+  - `rhv_hv_sysctl=1` 让驱动在启动时初始化 `kern.hv_support`
 - **`csr-active-config = 03080000`**（SIP 部分关闭）。这是 Docker 需要的最低值；默认 config 用的是 `430A0000`，它包含 `03080000` 的全部位，是 NootedRed 修改版推荐的值
 
 ### 为什么要关 SIP
@@ -28,7 +29,9 @@ HyperKit 被系统杀掉，Docker 报 "unable to start"。参考 RyzenHV 的 iss
 
 ## 2. RyzenHV 工具
 
-从 release 页下载 `ryzenhv-0.7.8-macos-x86_64.tar.gz`，解压后执行：
+固定发布地址为 [v0.7.9-compat.1](https://github.com/lorzzn/ryzen-hypervisor.framework/releases/tag/v0.7.9-compat.1)。CI 发布完成后，可下载 [完整 tar.gz 包](https://github.com/lorzzn/ryzen-hypervisor.framework/releases/download/v0.7.9-compat.1/ryzenhv-0.7.9-compat.1-macos-x86_64.tar.gz)及其 [SHA256 校验文件](https://github.com/lorzzn/ryzen-hypervisor.framework/releases/download/v0.7.9-compat.1/ryzenhv-0.7.9-compat.1-macos-x86_64.tar.gz.sha256)。
+
+包内驱动版本为 `0.7.9d1`，对应源码提交 `430b15e46b351d0510ffed965fbe603387b9dcc5`。EFI 中的驱动来自该提交的本地构建，CI 使用同一提交打包。解压后执行下面的命令。
 
 ```
 xattr -dr com.apple.quarantine .
@@ -36,7 +39,7 @@ xattr -dr com.apple.quarantine .
 ./bin/rhv-info                     # 开机时只显示 "SVM ... active on 1"
 ./bin/rhv-info hv rescan           # 补齐到 4/4（第一次创建虚拟机时 kext 也会自动扫描）
 ./bin/rhv-info selftest            # 应该显示 4 of 4 CPUs ok
-sudo ./libexec/hv-sysctl-daemon.sh install   # 每次开机自动把 kern.hv_support 设为 1，并清理过期的 hyperkit.pid
+sysctl kern.hv_support             # 驱动启动初始化后应为 1
 ```
 
 ## 3. Docker Desktop 4.97.0（build 244584，Intel 版）
@@ -46,11 +49,7 @@ RHV_YES=1 ./rhv docker-desktop get   # 会从 desktop.docker.com 下载，国内
 ./rhv docker-desktop                 # native 模式下只会把 UseVirtualizationFramework 设成 false
 ```
 
-0.7.8 有个 bug：如果 `~/Library/Group Containers/group.com.docker/settings-store.json` 还不存在，`rhv docker-desktop` 会报错。先手动写入下面的内容：
-
-```json
-{ "UseVirtualizationFramework": false }
-```
+上游 0.7.9-beta 已修复 Docker 设置文件缺失或为空时的配置失败，当前版本包含此修复。
 
 推荐在 `settings-store.json` 里加上这些设置：
 
@@ -103,16 +102,11 @@ rm "$HOME/Library/LaunchAgents/local.hackintosh.docker-autostart.plist"
 
 冷启动后是否消除授权弹窗，需要实际重启验证。
 
-### 过期 pid 文件的清理
+### 虚拟化初始化、PID 恢复与目录共享
 
-HyperKit 一旦崩溃，就会留下 `hyperkit.pid`，导致下次启动失败。RyzenHV 0.7.8 的开机服务只在开机时清理一次。`scripts/` 目录里的 LaunchAgent 每 60 秒检查一次：
+`rhv_hv_sysctl=1` 让驱动在启动时设置 `kern.hv_support=1`。驱动为 HyperKit 安装私有兼容钩子，通过生命周期锁安全回收过期 PID 文件，并通过 fileserver FD 交接处理目录共享及路径别名。
 
-```
-mkdir -p ~/.hackintosh && cp scripts/hyperkit-pid-clean.sh ~/.hackintosh/
-cp scripts/local.hackintosh.hyperkit-pid-clean.plist ~/Library/LaunchAgents/
-sed -i '' "s|__HOME__|$HOME|g" ~/Library/LaunchAgents/local.hackintosh.hyperkit-pid-clean.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.hackintosh.hyperkit-pid-clean.plist
-```
+此前 0.7.8-compat.1 已在移除 `com.overlorddev.ryzenhv.hvsysctl` 和 `local.hackintosh.hyperkit-pid-clean` 两个旧任务后，验证独立开机初始化、目录双向读写、中文与空格路径、原子替换及只读挂载。旧 PID 清理脚本和对应 LaunchAgent 已从仓库移除。
 
 ## 4. 关闭系统睡眠（必须）
 
@@ -139,4 +133,4 @@ macOS 直连 `registry-1.docker.io` 会超时。在 `~/.docker/daemon.json` 里�
 
 ## 回退
 
-用 `extras/config-no-ryzenhv.plist`：不带 RyzenHV，SIP 是 `00000000`。换掉 config 后删掉 `Kexts/RyzenHV.kext`，然后执行 `sudo ./libexec/hv-sysctl-daemon.sh remove`。
+使用 `extras/config-no-ryzenhv.plist`，SIP 为 `00000000`。换掉 config 后删掉 `Kexts/RyzenHV.kext`。从旧版迁移且仍装有 hvsysctl 服务时，可在旧版工具包中执行 `sudo ./libexec/hv-sysctl-daemon.sh remove`。

@@ -1,6 +1,6 @@
 # 300u-hackintosh-15
 
-AMD Athlon PRO 300U 小主机（Zen+ / Picasso，Vega 3 核显）的 macOS **Sequoia 15** OpenCore EFI，可以用 Docker Desktop（通过 [RyzenHV](https://github.com/OverlordDev/ryzen-hypervisor.framework)）。
+AMD Athlon PRO 300U 小主机（Zen+ / Picasso，Vega 3 核显）的 macOS **Sequoia 15** OpenCore EFI，可以用 Docker Desktop（通过 [RyzenHV 修改版](https://github.com/lorzzn/ryzen-hypervisor.framework)）。
 
 > ⚠️ 实验性配置。显卡加速、Wi-Fi、Docker 依赖的都是社区驱动，其中 AirportItlwm 是 alpha 版，RyzenHV 是实验项目。要跑 Docker，**必须部分关闭 SIP，并放宽 AMFI 签名检查**（原因见 [docs/DOCKER.md](docs/DOCKER.md)）。不要在会运行不可信代码的机器上用这份配置。
 
@@ -29,7 +29,7 @@ AMD Athlon PRO 300U 小主机（Zen+ / Picasso，Vega 3 核显）的 macOS **Seq
 | USB | ✅ | 4 个 USB3 口均为 5 Gb/s；未做 USB 映射 |
 | HDMI 音频 | ✅ | |
 | 3.5mm 模拟音频 | ✅ | AppleALC，layout-id 17：耳机输出和麦克风输入（主板只接了这两个口） |
-| Docker Desktop | ✅ | RyzenHV 0.7.8 + Docker Desktop 4.97.0 Intel 版，见 [docs/DOCKER.md](docs/DOCKER.md) |
+| Docker Desktop | ⚠️ | 当前 RyzenHV 0.7.9-compat.1 待实机启动验证。此前 0.7.8-compat.1 已验证 Docker Desktop 4.97.0、虚拟化初始化和目录共享，见 [docs/DOCKER.md](docs/DOCKER.md) |
 | 睡眠 | ⚠️ | macOS 能正常睡眠和唤醒，但 Docker 的虚拟机会在睡眠时崩溃，所以服务器用途下关闭了睡眠 |
 
 ## 目录结构
@@ -50,8 +50,8 @@ docs/
   WIRELESS.md                 Wi-Fi / 蓝牙
   DOCKER.md                   RyzenHV + Docker Desktop
 scripts/
-  hyperkit-pid-clean.sh       清理 Docker HyperKit 过期的 pid 文件
-  local.hackintosh.hyperkit-pid-clean.plist
+  docker-autostart.sh         等待默认 Docker socket 链接后启动
+  local.hackintosh.docker-autostart.plist
   usbwatch.py                 查看每个 USB 口协商出来的速度
 ```
 
@@ -118,7 +118,7 @@ sudo diskutil unmount disk0s1
 - **ACPI**：DSDT 里没有 EC 设备，所以用 [SSDTTime](https://github.com/corpnewt/SSDTTime) 生成了 SSDT-EC（台式机 FakeEC）和 SSDT-USBX。不要用 FixHPET。
 - **Quirks**：按 Dortania 指南 [Ryzen and Threadripper (17h/19h)](https://dortania.github.io/OpenCore-Install-Guide/AMD/zen.html) 设置；`ResizeAppleGpuBars = -1`，因为这块 BIOS 没有 ReBAR 选项。
 - **SecureBootModel**：`Disabled`。
-- **当前 boot-args**：`-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0 -NRedDisplayFix -btlfxnohwfilters`
+- **当前 boot-args**：`-v keepsyms=1 debug=0x100 npci=0x3000 rhv_enable_svm=1 rhv_allow_users=1 amfi_get_out_of_my_way=0x1 rhv_hv=1 rhv_selftest=1 ipc_control_port_options=0 -NRedDisplayFix -btlfxnohwfilters rhv_hv_sysctl=1`
 - **`csr-active-config`**：`430A0000`。Docker 至少需要 `03080000`（见 [docs/DOCKER.md](docs/DOCKER.md)），`430A0000` 在此基础上多放开了 0x40（NVRAM）和 0x200（未经批准的 kext），NootedRed 修改版的作者推荐这个值，测试也是在这个值下做的。
 - **声卡**：AppleALC，`DeviceProperties` 里给 `PciRoot(0x0)/Pci(0x8,0x1)/Pci(0x0,0x6)`（1022:15E3）设 `layout-id = 17`。**AppleALC 在 Kernel › Add 里必须排在 NootedRed 后面**：两者都 hook `AppleGFXHDAController::probe`，Lilu 要求先 hook 的插件用长跳转（NootedRed 是长跳转，AppleALC 是短跳转），顺序反了开机就 panic（`previous plugin had short jump type on a multiroute function`）。17 不合适时可以用 boot-arg `alcid=18` 或 `alcid=24` 临时试。
 
@@ -133,6 +133,7 @@ sudo diskutil unmount disk0s1
 
 ## 已知问题
 
+- **RyzenHV 0.7.9-compat.1 验证状态**。当前 kext 版本为 `0.7.9d1`，包含上游 0.7.9-beta 和本仓库使用的虚拟化初始化、HyperKit PID 及目录共享修复。已通过 macOS 构建、回归测试和 OpenCore 配置校验，尚待实机启动验证。[发布链接](https://github.com/lorzzn/ryzen-hypervisor.framework/releases/tag/v0.7.9-compat.1)已预留，CI 发布完成后提供下载。
 - **2026-11-15 的私有页修复验证**：RestrictEvents `1.1.7-cow.1` 保留 CPU 名称修改，通过进程私有页写入修复原有页哈希问题。BlueToolFixup `2.7.3-cow.3` 包含蓝牙进程私有页修复、授权修复和可选扫描兼容补丁。macOS 15.8.3（24H241）从 U 盘启动后，系统设置可运行，蓝牙持续发现设备，原有两类硬件过滤错误均为 0 次，未发现新的页哈希错误或相关进程崩溃。该观察窗口约 22 分钟，配对、持续连接、睡眠唤醒和功耗仍待验证。
 - **Spotlight 与后台服务**：`mds` 在 11 月 14 日、15 日各出现一次相同 UUID 读取位置的无效内存访问，最近一次已自动恢复，随后搜索查询成功，根因仍待定位。通讯录／查找后台服务的沙盒拒绝也仍会出现，相关功能影响尚未验证。
 - **Chrome 卡死整机（只在用官方 NootedRed 时出现）**：Chrome 的 GPU 进程一启动，几十秒内 GPU 就卡死（`GFX event timeout` / `gpuRestart`），WindowServer 跟着卡死，几分钟后 `IPI timeout` panic。用修改版并加上 `-NRedDisplayFix` 就不会出现。补丁装没装上，可以用 `ioreg -l -w0 | grep NRedSubmitGuard` 看：应该有 `NRedSubmitGuardWindowServerApplied = 1`。`NRedSubmitGuardDynamicRejected = 1` 在正常工作时也会出现（来自用另一份共享缓存的 DriverKit 进程，设上后不清除），不能单凭它判断失败。如果补丁没装上（比如 macOS 更新以后），在 Chrome 设置里关掉"使用图形加速功能"就能避开。
@@ -158,8 +159,8 @@ sudo diskutil unmount disk0s1
 | AppleMCEReporterDisabler | 1.2 | [acidanthera/bugtracker 附件](https://github.com/acidanthera/bugtracker/files/3703498/AppleMCEReporterDisabler.kext.zip) |
 | IntelBluetoothFirmware / IntelBTPatcher | 2.4.0 | [OpenIntelWireless/IntelBluetoothFirmware](https://github.com/OpenIntelWireless/IntelBluetoothFirmware) |
 | AirportItlwm (Sequoia) | 2.4.0-alpha (7204c69) | [laobamac/itlwm](https://github.com/laobamac/itlwm/releases/tag/v2.4.0-alpha) |
-| RyzenHV | 0.7.8 | [OverlordDev/ryzen-hypervisor.framework](https://github.com/OverlordDev/ryzen-hypervisor.framework) |
+| RyzenHV（修改版） | 0.7.9-compat.1（kext 0.7.9d1） | [lorzzn/ryzen-hypervisor.framework](https://github.com/lorzzn/ryzen-hypervisor.framework/releases/tag/v0.7.9-compat.1)，CI 发布地址 |
 | NootedRed（修改版） | v0.9.0-pre-release.15-identity.1 | [lorzzn/NootedRed](https://github.com/lorzzn/NootedRed/releases/tag/v0.9.0-pre-release.15-identity.1)，需自行下载，见步骤 1 |
 | ForgedInvariant | 1.5.0 | [ChefKissInc/ForgedInvariant](https://github.com/ChefKissInc/ForgedInvariant/releases)，需自行下载，见步骤 1 |
 
-各组件按各自的许可证分发。RestrictEvents、BrcmPatchRAM 与 BlueToolFixup 私有页实现的分发声明见 [docs/licenses](docs/licenses)。本仓库自己写的文档和脚本只是附带的说明。
+各组件按各自的许可证分发。RyzenHV、RestrictEvents、BrcmPatchRAM 与 BlueToolFixup 私有页实现的分发声明见 [docs/licenses](docs/licenses)。本仓库自己写的文档和脚本只是附带的说明。
